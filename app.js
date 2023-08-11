@@ -66,6 +66,7 @@ app.post("/login", jsonParser, function (req, res, next) {
                 firstName: users[0].firstName,
                 lastName: users[0].lastName,
                 hospitalNumber: users[0].hospitalNumber,
+                customer_status: users[0].customer_status,
               },
               secret,
               {
@@ -86,7 +87,11 @@ app.post("/authen", jsonParser, function (req, res, next) {
   try {
     const token = req.headers.authorization.split(" ")[1];
     var decoded = jwt.verify(token, secret);
-    res.json({ status: "ok", decoded });
+    res.json({
+      customer_status: decoded.customer_status,
+      status: "ok",
+      decoded,
+    });
   } catch (err) {
     res.json({ status: "error", message: err.message });
   }
@@ -122,14 +127,14 @@ app.get("/api/CountStatus", (req, res) => {
      WHERE appoint_status.status = 'confirmed'
      AND DATE(appoint.created_at) = CURDATE()) AS confirmedCount,
     (SELECT COUNT(status) FROM appointment_status WHERE status = "pending") AS pending_count;`;
-  
+
   connection.query(sqlQuery, (err, results) => {
     if (err) {
       console.error("Error executing query:", err);
       res.status(500).json({ error: "Internal Server Error" });
       return;
     }
-    
+
     const totalAppointment = results[0].totalAppointment.toString();
     const confirmedCount = results[0].confirmedCount.toString();
     const pendingCount = results[0].pending_count.toString();
@@ -201,6 +206,19 @@ app.get("/api/totalAppointment", (req, res) => {
 app.get("/api/readStatus", (req, res) => {
   const sql = `
       SELECT * FROM \`status\`
+    `;
+  connection.query(sql, (err, results, fields) => {
+    if (err) {
+      console.log(err);
+      return res.status(400).send();
+    }
+    res.status(200).json(results);
+  });
+});
+//============================== get selecte Status Customer =================================//
+app.get("/api/readStatusCustomer", (req, res) => {
+  const sql = `
+      SELECT * FROM \`customer_status\` 
     `;
   connection.query(sql, (err, results, fields) => {
     if (err) {
@@ -419,7 +437,63 @@ app.put("/api/updateAppointment/:id", (req, res) => {
     }
   );
 });
+//====================================== updateCustomer ===================================//
+app.put('/api/updateCustomer/:id', (req, res) => {
+  const customerId = req.params.id;
+  const updatedEmployee = req.body;
 
+  const query = `
+    UPDATE customers
+    SET identificationType = ?,
+        identificationNumber = ?,
+        gender = ?,
+        prefix = ?,
+        firstName = ?,
+        lastName = ?,
+        birthDate = ?,
+        address = ?,
+        moo = ?,
+        subDistrict = ?,
+        district = ?,
+        province = ?,
+        postalCode = ?,
+        mobile = ?,
+        homePhone = ?,
+        email = ?,
+        customer_status = ?
+    WHERE id = ?
+  `;
+
+  const values = [
+    updatedEmployee.identificationType,
+    updatedEmployee.identificationNumber,
+    updatedEmployee.gender,
+    updatedEmployee.prefix,
+    updatedEmployee.firstName,
+    updatedEmployee.lastName,
+    updatedEmployee.birthDate,
+    updatedEmployee.address,
+    updatedEmployee.moo,
+    updatedEmployee.subDistrict,
+    updatedEmployee.district,
+    updatedEmployee.province,
+    updatedEmployee.postalCode,
+    updatedEmployee.mobile,
+    updatedEmployee.homePhone,
+    updatedEmployee.email,
+    updatedEmployee.customer_status,
+    customerId
+  ];
+
+  connection.query(query, values, (err, result) => {
+    if (err) {
+      console.error(err);
+      res.status(500).json({ error: 'An error occurred while updating customer.' });
+    } else {
+      res.json({ success: true });
+    }
+  });
+});
 //===================================== Insert Customer ==========================================//
 app.post("/api/insertCustomer", (req, res) => {
   // ดึงข้อมูลที่ต้องการจาก body ของ request
@@ -439,7 +513,7 @@ app.post("/api/insertCustomer", (req, res) => {
 
     // ทำการบันทึกข้อมูลผู้ใช้งานลงในฐานข้อมูล
     const sql =
-      "INSERT INTO customers ( identificationType, identificationNumber, hospitalNumber, gender, prefix, firstName, lastName, birthDate, address, moo, subDistrict, district, province, postalCode, mobile, homePhone, email, password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+      "INSERT INTO customers ( identificationType, identificationNumber, hospitalNumber, gender, prefix, firstName, lastName, birthDate, address, moo, subDistrict, district, province, postalCode, mobile, homePhone, email, password, customer_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
     const values = [
       formData.identificationType,
       formData.identificationNumber,
@@ -459,6 +533,7 @@ app.post("/api/insertCustomer", (req, res) => {
       formData.homePhone,
       formData.email,
       hash, // เก็บรหัสผ่านที่ถูกเข้ารหัสไว้แทน
+      "guest", // เพิ่มค่า customer_status เป็น "guest"
     ];
     connection.query(sql, values, (error, results, fields) => {
       if (error) {
@@ -471,6 +546,7 @@ app.post("/api/insertCustomer", (req, res) => {
     });
   });
 });
+
 //========================================= Search  Dashboard =============================//
 app.post("/api/search", (req, res) => {
   const { hospitalNumber, firstName, lastName, startDate, endDate } = req.body;
@@ -478,24 +554,24 @@ app.post("/api/search", (req, res) => {
   // สร้างเงื่อนไขการค้นหาที่ต้องการใช้ใน query
   let conditions = [];
   let params = [];
-  console.log(hospitalNumber, firstName, lastName, startDate, endDate);
+
   if (hospitalNumber) {
     conditions.push("appoint.hospitalNumber = ?");
-    params.push(`${hospitalNumber}`);
+    params.push(hospitalNumber);
   }
 
   if (firstName) {
-    conditions.push("firstName = ?");
-    params.push(`${firstName}`);
+    conditions.push("customer.firstName = ?");
+    params.push(firstName);
   }
 
   if (lastName) {
-    conditions.push("lastName = ?");
-    params.push(`${lastName}`);
+    conditions.push("customer.lastName = ?");
+    params.push(lastName);
   }
 
   if (startDate && endDate) {
-    conditions.push("date_appointment BETWEEN ? AND ?");
+    conditions.push("appoint.date_appointment BETWEEN ? AND ?");
     params.push(startDate, endDate);
   }
 
@@ -513,6 +589,51 @@ app.post("/api/search", (req, res) => {
     ${hasConditions ? "WHERE " + conditions.join(" AND ") : ""}
     GROUP BY appoint.created_at DESC;
   `;
+
+  connection.query(query, params, (err, results) => {
+    if (err) {
+      console.error(err);
+      res.status(500).json({ error: "An error occurred while searching." });
+    } else {
+      res.json({ result: results });
+    }
+  });
+});
+
+//================================ search Customers ===========================================//
+app.post("/api/searchCustomers", (req, res) => {
+  const { identificationNumber, firstName, lastName, mobile } = req.body;
+
+  // สร้างเงื่อนไขการค้นหาที่ต้องการใช้ใน query
+  let conditions = [];
+  let params = [];
+
+  if (identificationNumber) {
+    conditions.push("identificationNumber = ?");
+    params.push(identificationNumber);
+  }
+  if (firstName) {
+    conditions.push("firstName = ?");
+    params.push(firstName);
+  }
+
+  if (lastName) {
+    conditions.push("lastName = ?");
+    params.push(lastName);
+  }
+  if (mobile) {
+    conditions.push("mobile = ?");
+    params.push(mobile);
+  }
+
+  // ตรวจสอบว่ามีเงื่อนไขการค้นหาหรือไม่
+  const hasConditions = conditions.length > 0;
+
+  // สร้าง query โดยใช้เงื่อนไขการค้นหาที่สร้างขึ้น
+  const query = `
+ SELECT * FROM customers
+   ${hasConditions ? "WHERE " + conditions.join(" AND ") : ""}
+ `;
 
   connection.query(query, params, (err, results) => {
     if (err) {
@@ -543,6 +664,17 @@ app.get("/api/readAppointmentALL", (req, res) => {
       };
     });
     res.status(200).json(formattedResults);
+  });
+});
+
+//========================================== api customers =====================================//
+app.get("/api/customers", (req, res) => {
+  const sql = "SELECT * FROM customers";
+  connection.query(sql, (err, result) => {
+    if (err) {
+      throw err;
+    }
+    res.json(result);
   });
 });
 
