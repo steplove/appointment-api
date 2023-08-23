@@ -270,11 +270,11 @@ app.get("/api/readAmphures", async (req, res) => {
 //================================== get all districts ==============================//
 app.get("/api/readDistricts", async (req, res) => {
   try {
-    const provinceName = req.query.provinceName; // รับค่าชื่อจังหวัดที่ต้องการค้นหาจาก query string
-    console.log(provinceName);
+    const amphureId = req.query.amphureId; // รับค่า id ของอำเภอที่ต้องการค้นหาจาก query string
+    console.log(amphureId, "amphureId readDistricts");
     connection.query(
-      "SELECT districts.* FROM amphures JOIN districts ON amphures.id = districts.amphure_id WHERE amphures.id = ?; ",
-      [provinceName], // ส่งพารามิเตอร์เข้าไปใน query
+      "SELECT districts.id, districts.zip_code, districts.name_th, districts.amphure_id FROM amphures JOIN districts ON amphures.id = districts.amphure_id WHERE amphures.id = ?; ",
+      [amphureId], // ใช้ amphureId แทน provinceName เป็นพารามิเตอร์ใน query
       (err, results, fields) => {
         if (err) {
           console.log(err);
@@ -288,14 +288,14 @@ app.get("/api/readDistricts", async (req, res) => {
     return res.status(500).send();
   }
 });
-//================================== get all PostalCodes ==============================//
 
+//================================== get all PostalCodes ==============================//
 app.get("/api/readPostalCodes", async (req, res) => {
   try {
-    const provinceName = req.query.provinceName; // รับค่า ID ของอำเภอที่ต้องการค้นหารหัสไปรษณีย์จาก query string
+    const amphureId = req.query.amphureId; // เปลี่ยนชื่อตัวแปรเป็น amphureId
     connection.query(
       "SELECT * FROM districts WHERE amphure_id = ? GROUP BY zip_code; ",
-      [provinceName], // ส่งพารามิเตอร์เข้าไปใน query
+      [amphureId], // ใช้ amphureId เป็นพารามิเตอร์ใน SQL
       (err, results, fields) => {
         if (err) {
           console.log(err);
@@ -309,8 +309,11 @@ app.get("/api/readPostalCodes", async (req, res) => {
     return res.status(500).send();
   }
 });
+
 //======================================= addAppointment ====================================//
+//แปลงวันที่ที่มีเวลาติดมาด้วยให้เหลือแค่วันที่เดือนปี ก่อนจะ insert
 app.post("/api/addAppointment", (req, res) => {
+  const moment = require("moment");
   const {
     hospitalNumber,
     appointmentDate,
@@ -320,17 +323,19 @@ app.post("/api/addAppointment", (req, res) => {
     description,
   } = req.body;
 
+  const formattedAppointmentDate = moment(appointmentDate).format("YYYY-MM-DD");
+
   const sqlAppointment =
     "INSERT INTO appointment (hospitalNumber, date_appointment, time_appointment, clinic, doctor, description, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())";
   const valuesAppointment = [
     hospitalNumber,
-    appointmentDate,
+    formattedAppointmentDate,
     appointmentTime,
     selectClinic,
     selectDoctor,
     description,
   ];
-
+  console.log(valuesAppointment, "valuesAppointment");
   connection.query(
     sqlAppointment,
     valuesAppointment,
@@ -438,7 +443,7 @@ app.put("/api/updateAppointment/:id", (req, res) => {
   );
 });
 //====================================== updateCustomer ===================================//
-app.put('/api/updateCustomer/:id', (req, res) => {
+app.put("/api/updateCustomer/:id", (req, res) => {
   const customerId = req.params.id;
   const updatedEmployee = req.body;
 
@@ -482,13 +487,15 @@ app.put('/api/updateCustomer/:id', (req, res) => {
     updatedEmployee.homePhone,
     updatedEmployee.email,
     updatedEmployee.customer_status,
-    customerId
+    customerId,
   ];
 
   connection.query(query, values, (err, result) => {
     if (err) {
       console.error(err);
-      res.status(500).json({ error: 'An error occurred while updating customer.' });
+      res
+        .status(500)
+        .json({ error: "An error occurred while updating customer." });
     } else {
       res.json({ success: true });
     }
@@ -649,7 +656,7 @@ app.post("/api/searchCustomers", (req, res) => {
 const moment = require("moment"); // นำเข้า Moment.js
 app.get("/api/readAppointmentALL", (req, res) => {
   const sql = `
-  SELECT appoint.*, appoint_status.status, customer.firstName, customer.lastName FROM appointment appoint LEFT JOIN appointment_status appoint_status ON appoint.id = appoint_status.appointment_id LEFT JOIN customers customer ON appoint.hospitalNumber = customer.hospitalNumber GROUP BY appoint.created_at DESC; 
+  SELECT appoint.*, appoint_status.status, customer.firstName, customer.lastName ,customer.mobile FROM appointment appoint LEFT JOIN appointment_status appoint_status ON appoint.id = appoint_status.appointment_id LEFT JOIN customers customer ON appoint.hospitalNumber = customer.hospitalNumber GROUP BY appoint.created_at DESC; 
   `;
   connection.query(sql, (err, results, fields) => {
     if (err) {
