@@ -501,6 +501,30 @@ app.put("/api/updateCustomer/:id", (req, res) => {
     }
   });
 });
+//============================================= Update Map HN ===================================//
+app.put("/api/updateMapHN/:id", (req, res) => {
+  const customerId = req.params.id;
+  const updatedEmployee = req.body;
+  console.log(customerId, "customerId");
+  console.log(updatedEmployee, "customerId");
+  const query = `
+    UPDATE customers
+    SET customer_status = ?
+    WHERE id = ?
+  `;
+  const values = [updatedEmployee.customer_status, customerId];
+  connection.query(query, values, (err, result) => {
+    if (err) {
+      console.error(err);
+      res
+        .status(500)
+        .json({ error: "An error occurred while updating customer." });
+    } else {
+      res.json({ success: true });
+    }
+  });
+});
+
 //===================================== Insert Customer ==========================================//
 app.post("/api/insertCustomer", (req, res) => {
   // ดึงข้อมูลที่ต้องการจาก body ของ request
@@ -556,7 +580,8 @@ app.post("/api/insertCustomer", (req, res) => {
 
 //========================================= Search  Dashboard =============================//
 app.post("/api/search", (req, res) => {
-  const { hospitalNumber, firstName, lastName, startDate, endDate } = req.body;
+  const { hospitalNumber, firstName, lastName, startDate, endDate, status } =
+    req.body;
 
   // สร้างเงื่อนไขการค้นหาที่ต้องการใช้ใน query
   let conditions = [];
@@ -581,6 +606,10 @@ app.post("/api/search", (req, res) => {
     conditions.push("appoint.date_appointment BETWEEN ? AND ?");
     params.push(startDate, endDate);
   }
+  if (status) {
+    conditions.push("appoint_status.status = ?");
+    params.push(status);
+  }
 
   // ตรวจสอบว่ามีเงื่อนไขการค้นหาหรือไม่
   const hasConditions = conditions.length > 0;
@@ -589,12 +618,14 @@ app.post("/api/search", (req, res) => {
   const query = `
   SELECT appoint.hospitalNumber, appoint.date_appointment, appoint.time_appointment,
   appoint.clinic, appoint.doctor, appoint.description, appoint.created_at, appoint_status.status,
-    customer.firstName, customer.lastName
+    customer.firstName, customer.lastName,appoint.id
   FROM appointment appoint
   LEFT JOIN appointment_status appoint_status ON appoint.id = appoint_status.appointment_id
   LEFT JOIN customers customer ON appoint.hospitalNumber = customer.hospitalNumber
     ${hasConditions ? "WHERE " + conditions.join(" AND ") : ""}
-    GROUP BY appoint.created_at DESC;
+    GROUP BY
+      CASE WHEN appoint_status.status = 'pending' THEN 1 ELSE 2 END, -- เรียงสถานะ pending ด้านบน
+      appoint_status.id; -- เรียงตาม ID เมื่อสถานะเท่ากัน
   `;
 
   connection.query(query, params, (err, results) => {
@@ -607,9 +638,11 @@ app.post("/api/search", (req, res) => {
   });
 });
 
+
 //================================ search Customers ===========================================//
 app.post("/api/searchCustomers", (req, res) => {
-  const { identificationNumber, firstName, lastName, mobile } = req.body;
+  const { identificationNumber, firstName, lastName, mobile, customerStatus } =
+    req.body;
 
   // สร้างเงื่อนไขการค้นหาที่ต้องการใช้ใน query
   let conditions = [];
@@ -632,7 +665,10 @@ app.post("/api/searchCustomers", (req, res) => {
     conditions.push("mobile = ?");
     params.push(mobile);
   }
-
+  if (customerStatus) {
+    conditions.push("customer_status = ?");
+    params.push(customerStatus);
+  }
   // ตรวจสอบว่ามีเงื่อนไขการค้นหาหรือไม่
   const hasConditions = conditions.length > 0;
 
@@ -651,18 +687,34 @@ app.post("/api/searchCustomers", (req, res) => {
     }
   });
 });
-
 //============================== get selecte Appointment In table =================================//
 const moment = require("moment"); // นำเข้า Moment.js
+
 app.get("/api/readAppointmentALL", (req, res) => {
   const sql = `
-  SELECT appoint.*, appoint_status.status, customer.firstName, customer.lastName ,customer.mobile FROM appointment appoint LEFT JOIN appointment_status appoint_status ON appoint.id = appoint_status.appointment_id LEFT JOIN customers customer ON appoint.hospitalNumber = customer.hospitalNumber GROUP BY appoint.created_at DESC; 
+    SELECT
+      appoint.*,
+      appoint_status.status,
+      customer.firstName,
+      customer.lastName,
+      customer.mobile
+    FROM
+      appointment appoint
+      LEFT JOIN appointment_status appoint_status ON appoint.id = appoint_status.appointment_id
+      LEFT JOIN customers customer ON appoint.hospitalNumber = customer.hospitalNumber
+    GROUP BY
+      appoint.created_at
+    ORDER BY
+      CASE WHEN appoint_status.status = 'pending' THEN 1 ELSE 2 END, -- เรียงสถานะ pending ด้านบน
+      appoint_status.id; -- เรียงตาม ID เมื่อสถานะเท่ากัน
   `;
+
   connection.query(sql, (err, results, fields) => {
     if (err) {
       console.log(err);
       return res.status(400).send();
     }
+
     // แปลงวันที่ที่มีเวลาติดมาด้วยให้เหลือแค่วันที่เดือนปี
     const formattedResults = results.map((result) => {
       return {
@@ -670,13 +722,15 @@ app.get("/api/readAppointmentALL", (req, res) => {
         date_appointment: moment(result.date_appointment).format("YYYY-MM-DD"),
       };
     });
+
     res.status(200).json(formattedResults);
   });
 });
 
 //========================================== api customers =====================================//
 app.get("/api/customers", (req, res) => {
-  const sql = "SELECT * FROM customers";
+  const sql =
+    "SELECT * FROM customers ORDER BY CASE WHEN customer_status = 'guest' THEN 1 ELSE 2 END, id;";
   connection.query(sql, (err, result) => {
     if (err) {
       throw err;
